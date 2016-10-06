@@ -3,6 +3,7 @@ import matplotlib
 import numpy as np
 from scipy import stats as sci
 from openpyxl import load_workbook
+import openpyxl.utils as util
 from copy import deepcopy
 # Make sure that we are using QT5
 matplotlib.use('Qt5Agg')
@@ -24,8 +25,112 @@ def main():
     sys.exit(app.exec_())
 
 
+class AbstractDataReader:
+
+    def get_od_list(self):
+        pass
+
+    def get_model_list(self):
+        pass
+
+    def get_time(self):
+        pass
 
 
+class EpochDataReader(AbstractDataReader):
+    def __init__(self, filename):
+        workbook = load_workbook(filename)
+        self.worksheet = workbook['Plate 1 - Sheet1']
+
+        self.wellTableLayout = self.worksheet['C30:N37']
+        self.model_list = list()
+        self.od_list = list()
+
+        self.set_tableview_values()
+        self.results_range = 0
+        self.blank_row = 0
+        self.results_row =0
+        self.time = list()
+        self.time_rows = list()
+
+        for row in self.worksheet.rows:
+
+            if row[0].value == 'Blank 650':
+                self.blank_row = row[0].row
+
+            elif row[0].value == 'Results':
+                self.results_row = row[0].row
+
+        self.results_range = self.results_row - self.blank_row
+        self.get_time_column()
+        self.parse_time()
+        self.get_data_values()
+
+    def parse_time(self):
+        for row in self.worksheet.iter_rows(min_row = int(self.time_row+1), max_row=int(self.results_row), min_col = self.time_column):
+            if row[0].value and ':' in str(row[0].value):
+                t_string = str(row[0].value)
+                (h,m,s) =t_string.split(':')
+                time_dec = float(h) + float(m)/60
+                self.time.append(round(time_dec,1))
+                self.time_rows.append(row[0].row)
+            elif row[0].value:
+                time_dec = float(row[0].value)*24
+                self.time.append(round(time_dec, 1))
+                self.time_rows.append(row[0].row)
+        print(self.time)
+
+    def get_data_values(self):
+        plate_plan_dict = {'A': '0', 'B': '1', 'C': '2', 'D': '3', 'E': '4', 'F': '5', 'G': '6', 'H': '7'}
+        # Get the well number from the table
+        for col in self.worksheet.iter_cols(min_row=min(self.time_rows) - 1, max_row=max(self.time_rows),
+                                            min_col=self.time_column + 1):
+            well_address = col[0].value
+            parsed_data = list()
+            for cell in col[1:]:
+
+                if cell.value:
+                    parsed_data.append(cell.value)
+                    row_index = int(plate_plan_dict[well_address[0]])
+                    column_index = int(well_address[1:]) - 1
+            self.od_list[row_index][column_index] = parsed_data
+
+
+
+    def get_time_column(self):
+        for row in self.worksheet.iter_rows(row_offset=self.blank_row):
+            for cell in row:
+                if cell.value == 'Time':
+
+                    self.time_column = util.column_index_from_string(cell.column)
+                    self.time_row = cell.row
+                    return
+
+    def set_tableview_values(self):
+
+        for row in self.wellTableLayout:
+            row_list = list()
+            blank_data_list = list()
+            for cell in row:
+                if 'SPL' in cell.value:
+                    row_list.append(" ")
+
+                elif 'BLK' in cell.value:
+                    row_list.append("B")
+                else:
+                    row_list.append("x")
+                blank_data_list.append(" ")
+            self.model_list.append(row_list)
+            self.od_list.append(blank_data_list)
+
+    def get_time(self):
+        return self.time
+
+    def get_od_list(self):
+        return self.od_list
+
+    def get_model_list(self):
+        return self.model_list
 
 class PlateReaderExcelData:
     def __init__(self, index, sample, od):
@@ -34,7 +139,9 @@ class PlateReaderExcelData:
         self.od = od
 
 
-class OmegaDataReader:
+
+
+class OmegaDataReader(AbstractDataReader):
     def __init__(self, filename):
         workbook = load_workbook(filename, read_only=True)
 
@@ -82,7 +189,7 @@ class OmegaDataReader:
 
         self.model_list = list()
         self.od_list = list()
-        for x in range(0, 7):
+        for x in range(0, 8):
             column = list()
             od_column = list()
             for y in range(0, 12):
@@ -94,10 +201,12 @@ class OmegaDataReader:
         plate_plan_dict = {'A': '0', 'B': '1', 'C': '2', 'D': '3', 'E': '4', 'F': '5', 'G': '6', 'H': '7'}
         for data in plate_reader_class_list:
             if data.sample == 'B':
-                self.model_list[int(plate_plan_dict[data.index[0]])][int(data.index[1])] = "B"
+                print(data.index[1])
+                self.model_list[int(plate_plan_dict[data.index[0]])][int(data.index[1])-1] = "B"
             else:
-                self.model_list[int(plate_plan_dict[data.index[0]])][int(data.index[1])] = " "
-                self.od_list[int(plate_plan_dict[data.index[0]])][int(data.index[1])] = data.od
+                print(data.index[1])
+                self.model_list[int(plate_plan_dict[data.index[0]])][int(data.index[1])-1] = " "
+                self.od_list[int(plate_plan_dict[data.index[0]])][int(data.index[1])-1] = data.od
 
     def get_od_list(self):
         return self.od_list
@@ -231,7 +340,7 @@ class PlateReaderGraph(MyMplCanvas):
         print(growth_rate_mean)
         print(growth_rate_std)
         self.data_line_list.insert(line_num,PlateReaderGraphLine(line_num, data_array,mean_array, std_array, growth_rate_mean, growth_rate_std, line_col, line_style, marker, legend, graph_type))
-        self.axes.cla()
+        self.fig.clf()
         legends = list()
         for line in self.data_line_list:
             self.set_plot(line)
@@ -242,7 +351,7 @@ class PlateReaderGraph(MyMplCanvas):
     def clear_line(self, line_num):
         self.data_line_list.pop(line_num)
         legend_pos = self.legend._loc
-        self.axes.cla()
+        self.fig.clf()
         legends = list()
         for line in self.data_line_list:
             self.set_plot(line)
@@ -252,7 +361,7 @@ class PlateReaderGraph(MyMplCanvas):
 
     def set_line_colour(self, line_num, line_col):
         legend_pos = self.legend._loc
-        self.axes.cla()
+        self.fig.clf()
         legends = list()
         for line in self.data_line_list:
             if int(line.line_num) == int(line_num):
@@ -264,7 +373,7 @@ class PlateReaderGraph(MyMplCanvas):
 
     def set_line_style(self, line_num, line_style):
         legend_pos = self.legend._loc
-        self.axes.cla()
+        self.fig.clf()
         legends = list()
         for line in self.data_line_list:
             if int(line.line_num) == int(line_num):
@@ -276,7 +385,7 @@ class PlateReaderGraph(MyMplCanvas):
 
     def set_line_marker(self, line_num, marker):
         legend_pos = self.legend._loc
-        self.axes.cla()
+        self.fig.clf()
         legends = list()
         for line in self.data_line_list:
             if int(line.line_num) == int(line_num):
@@ -289,7 +398,7 @@ class PlateReaderGraph(MyMplCanvas):
 
     def set_line_legend(self, line_num, legend):
         legend_pos = self.legend._loc
-        self.axes.cla()
+        self.fig.clf()
         legends =list()
         for line in self.data_line_list:
             if int(line.line_num) == int(line_num):
@@ -300,7 +409,7 @@ class PlateReaderGraph(MyMplCanvas):
         self.draw()
 
     def clear_figure(self):
-        self.axes.cla()
+        self.fig.clf()
         self.data_line_list= list()
 
         self.data_line_num = 0
@@ -309,7 +418,7 @@ class PlateReaderGraph(MyMplCanvas):
     def set_error(self, error_type):
         legend_pos = self.legend._loc
 
-        self.axes.cla()
+        self.fig.clf()
         legends = list()
         for line in self.data_line_list:
             line.std = self.calculate_error(line.line_data, error_type)
@@ -329,7 +438,7 @@ class PlateReaderGraph(MyMplCanvas):
 
     def set_graph_type(self, graph_type):
         legend_pos = self.legend._loc
-        self.axes.cla()
+        self.fig.clf()
         legends = list()
         for line in self.data_line_list:
             line.graph_type = graph_type
@@ -347,7 +456,7 @@ class PlateReaderGraph(MyMplCanvas):
         if legend_pos:
             self.legend._loc = legend_pos
     def set_plot(self, line):
-        self.fig.clf()
+        
         if self.sub_graph:
             self.axes = self.fig.add_subplot(211)
             self.axes2 = self.fig.add_subplot(212)
@@ -385,7 +494,7 @@ class PlateReaderGraph(MyMplCanvas):
     def set_style(self, style):
         plt.style.use(['seaborn-white', style])
         legend_pos = self.legend._loc
-        self.axes.cla()
+        self.fig.clf()
         legends = list()
         for line in self.data_line_list:
             self.set_plot(line)
@@ -854,6 +963,7 @@ class PlateReaderWindow(QtWidgets.QMainWindow):
 
         self.main_widget = PlateReaderMainWidget()
         self.setCentralWidget(self.main_widget)
+        self.setGeometry(100,100, 1200, 600)
 
     def file_open(self):
         self.main_widget.open_platereader_data()
@@ -879,7 +989,7 @@ class PlateReaderMainWidget(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout()
         main_box =QtWidgets.QHBoxLayout()
 
-        self.setGeometry(100,100,1400,600)
+        self.setGeometry(100,100,1200,600)
 
         main_box.addLayout(layout)
 
@@ -893,12 +1003,13 @@ class PlateReaderMainWidget(QtWidgets.QWidget):
 
     def initalise_table(self):
         tableview_list = list()
-        for x in range(0, 7):
+        for x in range(0, 8):
             column = list()
             for y in range(0, 12):
                 column.append(" ")
 
             tableview_list.append(column)
+
         return [tableview_list, [],[]]
 
     def add_graph(self):
@@ -912,7 +1023,15 @@ class PlateReaderMainWidget(QtWidgets.QWidget):
             print("Please select your data first")
 
     def open_platereader_data(self):
-        data_reader = OmegaDataReader('PlateReaderResults.xlsx')
+        filename = QtWidgets.QFileDialog.getOpenFileName(self,'Select File', '.')
+
+        try:
+            data_reader = EpochDataReader(filename[0])
+            print("Epoch Reader!")
+        except KeyError:
+            data_reader = OmegaDataReader(filename[0])
+            print("Omega Reader!")
+
         model_view = data_reader.get_model_list()
         plate_data = data_reader.get_od_list()
         time = data_reader.get_time()
@@ -925,8 +1044,9 @@ class PlateReaderMainWidget(QtWidgets.QWidget):
         # set the table model
         for x in range(1,13):
             header_col.append(str(x))
-        header_row = string.ascii_uppercase[:7]
+        header_row = string.ascii_uppercase[:8]
         header = [header_col,header_row]
+        print(header_row)
 
         return header
 
@@ -940,7 +1060,7 @@ class PlateReaderTableView(QtWidgets.QTableView):
         self.current_line = ""
 
         # set the minimum size
-        self.setMinimumSize(600, 300)
+        self.setMinimumSize(500, 300)
 
         # hide grid
         self.setShowGrid(False)
