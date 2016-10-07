@@ -89,10 +89,12 @@ class EpochDataReader(AbstractDataReader):
             parsed_data = list()
             for cell in col[1:]:
 
-                if cell.value:
-                    parsed_data.append(cell.value)
+                if cell.value or cell.value == 0:
+                    parsed_data.append(float(cell.value))
                     row_index = int(plate_plan_dict[well_address[0]])
                     column_index = int(well_address[1:]) - 1
+
+            print(len(parsed_data))
             self.od_list[row_index][column_index] = parsed_data
 
 
@@ -112,13 +114,15 @@ class EpochDataReader(AbstractDataReader):
             row_list = list()
             blank_data_list = list()
             for cell in row:
-                if 'SPL' in cell.value:
-                    row_list.append(" ")
+                if cell.value:
+                    if 'SPL' in cell.value:
+                        row_list.append(" ")
 
-                elif 'BLK' in cell.value:
-                    row_list.append("B")
+                    elif 'BLK' in cell.value:
+                        row_list.append("B")
                 else:
                     row_list.append("x")
+
                 blank_data_list.append(" ")
             self.model_list.append(row_list)
             self.od_list.append(blank_data_list)
@@ -739,7 +743,7 @@ class PlateReaderLine(QtWidgets.QWidget):
         self.line_num = line_num
         self.graph = graph
         self.graph_editor = graph_editor
-        self.colour_dict = {'Blue':'xkcd:blue', 'Red': 'xkcd:red', 'Green': 'xkcd:green', 'Black':'xkcd:black'}
+        self.colour_dict = {'Blue':'b', 'Red': 'r', 'Green': 'g', 'Black':'k'}
         self.marker_dict = {'None':'None', 'Square': "s", 'Circle':'o', 'Triangle':'^'}
 
 
@@ -963,7 +967,7 @@ class PlateReaderWindow(QtWidgets.QMainWindow):
 
         self.main_widget = PlateReaderMainWidget()
         self.setCentralWidget(self.main_widget)
-        self.setGeometry(100,100, 1200, 600)
+        self.setGeometry(100,100, 1000, 600)
 
     def file_open(self):
         self.main_widget.open_platereader_data()
